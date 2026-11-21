@@ -1,0 +1,15 @@
+data/
+.DS_Store
+__pycache__/
+*.pyc
+*.npy
+code/artifacts/*
+!code/artifacts/split.csv
+code/results/*.tmp
+GATES.md
+.unlazy/
+.unlazy-hook-state.json
+code/kaggle/build/
+kaggle
+.claude/
+.nojekyll

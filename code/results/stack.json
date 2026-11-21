@@ -1,0 +1,22 @@
+{
+  "sources": [
+    "ref_head",
+    "baseline",
+    "style"
+  ],
+  "reference": "ref_head",
+  "reference_macro_f1": 0.871037263786822,
+  "reference_weighted_macro_f1": 0.8758461132809717,
+  "nested_cv_macro_f1": 0.9258243805615779,
+  "nested_cv_weighted_macro_f1": 0.9230366547970555,
+  "n_splits": 5,
+  "inner_splits": 3,
+  "chosen_per_outer_fold": [
+    "hgb",
+    "hgb",
+    "hgb",
+    "hgb",
+    "hgb"
+  ],
+  "final_model": "hgb"
+}
