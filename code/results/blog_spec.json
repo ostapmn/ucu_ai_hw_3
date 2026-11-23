@@ -1,0 +1,19 @@
+{
+  "model": "microsoft/mdeberta-v3-base",
+  "mode": "headtail",
+  "seed": 31,
+  "train_size": 32212,
+  "max_length": 512,
+  "split_col": "part",
+  "train_domain": "blog_authorship_corpus",
+  "init_model": true,
+  "head_tokens": 128,
+  "epochs": 2,
+  "lr": 1e-05,
+  "eval_windows": 1,
+  "stopped_early": false,
+  "train_seconds": 4096.278250217438,
+  "samples_per_sec": 15.725494232863864,
+  "macro_f1": 0.9110872490765632,
+  "weighted_macro_f1": 0.9135011253329263
+}

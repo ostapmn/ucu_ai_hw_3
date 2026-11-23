@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -100,7 +101,7 @@ def f1_submission():
     assert set(sub.label) <= set(common.LABELS)
 
 
-def logits_gate(prefix):
+def logits_gate(prefix, check_seed=True):
     metrics = read_metrics(prefix + ".json")
     split = common.load_split()
     counts = split.part.value_counts()
@@ -111,7 +112,8 @@ def logits_gate(prefix):
     assert np.isfinite(val).all() and np.isfinite(test).all()
     for key in ["macro_f1", "weighted_macro_f1", "model", "seed", "train_size", "max_length"]:
         assert key in metrics, key
-    assert metrics["seed"] == common.SEED
+    if check_seed:
+        assert metrics["seed"] == common.SEED
     return metrics
 
 
@@ -177,8 +179,41 @@ CHECKS = {
 }
 
 
+LEGACY = [
+    "a1_split",
+    "a1_weights",
+    "a2_eda",
+    "b1_baseline",
+    "b2_features",
+    "f1_submission",
+    "c2_ref",
+    "d1_stack",
+    "d2_thresholds",
+]
+
+
+def legacy():
+    for name in LEGACY:
+        CHECKS[name]()
+
+
+CHECKS["legacy"] = legacy
+
+
+def load_extra_checks():
+    folder = Path(__file__).resolve().parent / "checks"
+    for path in sorted(folder.glob("*.py")):
+        if path.stem.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location(f"checks_{path.stem}", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        CHECKS.update(module.CHECKS)
+
+
 def main():
     name = sys.argv[1]
+    load_extra_checks()
     CHECKS[name]()
     print(name, "verification passed")
 

@@ -31,3 +31,15 @@ def stylometric_features(texts):
         }
     )
     return feats.astype(np.float32)
+
+
+def drift_features(texts):
+    texts = pd.Series(texts).fillna("").astype(str).reset_index(drop=True)
+    size = texts.str.len()
+    cut = (size // 3).astype(int)
+    first = pd.Series([t[:c] for t, c in zip(texts, cut)])
+    last = pd.Series([t[len(t) - c :] if c else "" for t, c in zip(texts, cut)])
+    a = stylometric_features(first).drop(columns=["log_chars", "log_words", "paragraphs"])
+    b = stylometric_features(last).drop(columns=["log_chars", "log_words", "paragraphs"])
+    out = pd.concat([a.add_prefix("first_"), b.add_prefix("last_"), (b - a).add_prefix("delta_")], axis=1)
+    return out.astype(np.float32)

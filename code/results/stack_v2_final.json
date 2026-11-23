@@ -1,0 +1,56 @@
+{
+  "selected_by": "dev_cv_and_lock",
+  "public_leaderboard_used": false,
+  "rule": "candidate_1 is the best stack on dev CV with a non-negative lock difference; candidate_2 is the most stable earlier stack (dev equals lock) with a different composition",
+  "candidates": {
+    "candidate_1": {
+      "tag": "headtail_abcdg_win3_blog",
+      "submission_file": "code/artifacts/submission_abcdg_win3_blog.csv",
+      "sources": [
+        "headtail_a",
+        "headtail_b",
+        "headtail_c",
+        "headtail_d",
+        "headtail_g",
+        "ref_head",
+        "baseline",
+        "style",
+        "drift",
+        "bp_full",
+        "bp_head",
+        "bp_tail",
+        "winscan_a",
+        "winscan_g",
+        "blog_spec"
+      ],
+      "dev_cv_weighted_macro_f1": 0.9660378836370337,
+      "lock_weighted_macro_f1": 0.9612067090816651,
+      "dev_cv_macro_f1": 0.9681001530066057,
+      "lock_macro_f1": 0.9642352095558828,
+      "final_model": "hgb_slow"
+    },
+    "candidate_2": {
+      "tag": "headtail_abcd_win",
+      "submission_file": "code/artifacts/submission_abcd_win.csv",
+      "sources": [
+        "headtail_a",
+        "headtail_b",
+        "headtail_c",
+        "headtail_d",
+        "ref_head",
+        "baseline",
+        "style",
+        "drift",
+        "bp_full",
+        "bp_head",
+        "bp_tail",
+        "winscan_a"
+      ],
+      "dev_cv_weighted_macro_f1": 0.9607366654935943,
+      "lock_weighted_macro_f1": 0.9606598397486822,
+      "dev_cv_macro_f1": 0.9634849759955711,
+      "lock_macro_f1": 0.9630720874896831,
+      "final_model": "hgb"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "model": "xlm-roberta-base",
+  "mode": "headtail",
+  "seed": 19,
+  "train_size": 60000,
+  "max_length": 512,
+  "split_col": "part2",
+  "head_tokens": 128,
+  "epochs": 2,
+  "lr": 2e-05,
+  "eval_windows": 1,
+  "stopped_early": false,
+  "train_seconds": 5870.287571668625,
+  "samples_per_sec": 20.441928701951152,
+  "macro_f1": 0.9198918670969624,
+  "weighted_macro_f1": 0.919239888317063
+}

@@ -9,7 +9,7 @@ BUILD = Path(__file__).resolve().parent / "build"
 USER = "ostapmn"
 DATASET = "hw3-code"
 COMPETITION = "ai-generated-text-detection-hw3-ucu-ai-2026"
-FILES = ["common.py", "train_encoder.py"]
+FILES = ["common.py", "train_encoder.py", "windows.py", "window_scan.py"]
 
 RUNNER = """import glob
 import os
@@ -25,8 +25,31 @@ for name in %(files)r:
     shutil.copy(SRC + "/" + name, WORK + "/" + name)
 shutil.copy(SRC + "/split.csv", WORK + "/artifacts/split.csv")
 train_csv = glob.glob("/kaggle/input/**/train.csv", recursive=True)[0]
+configs = glob.glob("/kaggle/input/**/config.json", recursive=True)
+model_dir = os.path.dirname(configs[0]) if configs else ""
+args = [a.replace("@model", model_dir) for a in %(args)r]
 env = dict(os.environ, DATA_DIR=os.path.dirname(train_csv), ARTIFACTS_DIR=WORK + "/artifacts", RESULTS_DIR=WORK + "/results")
-subprocess.run([sys.executable, "train_encoder.py"] + %(args)r, cwd=WORK, env=env, check=True)
+subprocess.run([sys.executable, "train_encoder.py"] + args, cwd=WORK, env=env, check=True)
+"""
+
+
+SCAN_RUNNER = """import glob
+import os
+import shutil
+import subprocess
+import sys
+
+SRC = os.path.dirname(glob.glob("/kaggle/input/**/common.py", recursive=True)[0])
+WORK = "/kaggle/working"
+os.makedirs(WORK + "/artifacts", exist_ok=True)
+os.makedirs(WORK + "/results", exist_ok=True)
+for name in %(files)r:
+    shutil.copy(SRC + "/" + name, WORK + "/" + name)
+shutil.copy(SRC + "/split.csv", WORK + "/artifacts/split.csv")
+train_csv = glob.glob("/kaggle/input/**/train.csv", recursive=True)[0]
+model_dir = os.path.dirname(glob.glob("/kaggle/input/**/config.json", recursive=True)[0])
+env = dict(os.environ, DATA_DIR=os.path.dirname(train_csv), ARTIFACTS_DIR=WORK + "/artifacts", RESULTS_DIR=WORK + "/results")
+subprocess.run([sys.executable, "window_scan.py", "--model-dir", model_dir] + %(args)r, cwd=WORK, env=env, check=True)
 """
 
 
@@ -51,11 +74,22 @@ def publish_dataset():
         run(["kaggle", "datasets", "create", "-p", str(folder), "-r", "zip"])
 
 
-def publish_kernel(slug, args):
+def publish_model(path, slug):
+    folder = BUILD / "model"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    for item in Path(path).iterdir():
+        shutil.copy(item, folder / item.name)
+    meta = {"title": slug, "id": f"{USER}/{slug}", "licenses": [{"name": "other"}]}
+    (folder / "dataset-metadata.json").write_text(json.dumps(meta, indent=2))
+    run(["kaggle", "datasets", "create", "-p", str(folder), "-r", "zip"])
+
+
+def publish_kernel(slug, args, model_slug=None, scan=False):
     folder = BUILD / slug
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
-    (folder / "run.py").write_text(RUNNER % {"files": FILES, "args": args})
+    (folder / "run.py").write_text((SCAN_RUNNER if scan else RUNNER) % {"files": FILES, "args": args})
     meta = {
         "id": f"{USER}/{slug}",
         "title": slug,
@@ -65,7 +99,7 @@ def publish_kernel(slug, args):
         "is_private": True,
         "enable_gpu": True,
         "enable_internet": True,
-        "dataset_sources": [f"{USER}/{DATASET}"],
+        "dataset_sources": [f"{USER}/{DATASET}"] + ([f"{USER}/{model_slug}"] if model_slug else []),
         "competition_sources": [COMPETITION],
     }
     (folder / "kernel-metadata.json").write_text(json.dumps(meta, indent=2))
@@ -75,6 +109,12 @@ def publish_kernel(slug, args):
 def main():
     if sys.argv[1] == "--dataset":
         publish_dataset()
+    elif sys.argv[1] == "--model":
+        publish_model(sys.argv[2], sys.argv[3])
+    elif sys.argv[1] == "--scan":
+        publish_kernel(sys.argv[2], sys.argv[4:], model_slug=sys.argv[3], scan=True)
+    elif sys.argv[1] == "--finetune":
+        publish_kernel(sys.argv[3], sys.argv[4:], model_slug=sys.argv[2])
     else:
         publish_kernel(sys.argv[1], sys.argv[2:])
 

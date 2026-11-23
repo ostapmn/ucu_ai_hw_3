@@ -1,0 +1,17 @@
+{
+  "model": "microsoft/mdeberta-v3-base",
+  "mode": "headtail",
+  "seed": 7,
+  "train_size": 60000,
+  "max_length": 512,
+  "split_col": "part3",
+  "head_tokens": 128,
+  "epochs": 2,
+  "lr": 2e-05,
+  "eval_windows": 1,
+  "stopped_early": false,
+  "train_seconds": 7850.278337478638,
+  "samples_per_sec": 15.286082205149143,
+  "macro_f1": 0.9198601581667948,
+  "weighted_macro_f1": 0.9184949400296613
+}

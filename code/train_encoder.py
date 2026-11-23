@@ -10,12 +10,13 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, get_linear_schedule_with_warmup
 
-from common import ARTIFACTS, LABEL2ID, RESULTS, SEED, load_test, macro_f1, split_frames, LABELS
+from common import ARTIFACTS, LABEL2ID, RESULTS, SEED, domain_frames, load_test, macro_f1, split_frames, LABELS
+from windows import head_tail
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["head", "chunks"], default="head")
+    parser.add_argument("--mode", choices=["head", "chunks", "headtail"], default="head")
     parser.add_argument("--model", default="microsoft/mdeberta-v3-base")
     parser.add_argument("--prefix", default="ref_head")
     parser.add_argument("--train-size", type=int, default=60000)
@@ -29,6 +30,11 @@ def parse_args():
     parser.add_argument("--time-budget-hours", type=float, default=6.0)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--save-model", action="store_true")
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--head-tokens", type=int, default=128)
+    parser.add_argument("--split-col", default="part")
+    parser.add_argument("--train-domain", default=None)
+    parser.add_argument("--init-model", default=None)
     parser.add_argument("--checkpoint-dir", default=None)
     parser.add_argument("--checkpoint-every", type=int, default=1000)
     return parser.parse_args()
@@ -56,13 +62,16 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def encode(tokenizer, texts, body, mode):
+def encode(tokenizer, texts, body, mode, head):
     kwargs = {"add_special_tokens": False, "return_attention_mask": False}
     if mode == "head":
         kwargs.update(truncation=True, max_length=body)
     ids = []
     for start in range(0, len(texts), 512):
-        ids.extend(tokenizer(list(texts[start : start + 512]), **kwargs)["input_ids"])
+        batch = tokenizer(list(texts[start : start + 512]), **kwargs)["input_ids"]
+        if mode == "headtail":
+            batch = [head_tail(tokens, body, head) for tokens in batch]
+        ids.extend(batch)
     return ids
 
 
@@ -124,21 +133,21 @@ def predict(model, items, n_docs, cls_id, sep_id, pad_id, batch_size, device):
 
 def main():
     args = parse_args()
-    set_seed(SEED)
+    set_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     body = args.max_length - 2
-    train, val = split_frames()
+    train, val = domain_frames(args.train_domain) if args.train_domain else split_frames(args.split_col)
     if args.smoke:
         train = train.sample(n=512, random_state=SEED).reset_index(drop=True)
     elif args.train_size < len(train):
-        train = train.sample(n=args.train_size, random_state=SEED).reset_index(drop=True)
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+        train = train.sample(n=args.train_size, random_state=args.seed).reset_index(drop=True)
+    tokenizer = AutoTokenizer.from_pretrained(args.init_model or args.model)
     cls_id, sep_id, pad_id = tokenizer.cls_token_id, tokenizer.sep_token_id, tokenizer.pad_token_id
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=3, dtype=torch.float32)
+    model = AutoModelForSequenceClassification.from_pretrained(args.init_model or args.model, num_labels=3, dtype=torch.float32)
     model.to(device)
     parallel = nn.DataParallel(model) if device == "cuda" and torch.cuda.device_count() > 1 else model
     started = time.time()
-    train_ids = encode(tokenizer, train.text.tolist(), body, args.mode)
+    train_ids = encode(tokenizer, train.text.tolist(), body, args.mode, args.head_tokens)
     train_labels = train.label.map(LABEL2ID).tolist()
     dataset = WindowDataset(train_ids, train_labels, body, args.mode == "chunks", cls_id, sep_id)
     n_batches = len(dataset) // args.batch_size
@@ -163,7 +172,7 @@ def main():
         if stopped_early:
             break
         parallel.train()
-        order = torch.randperm(len(dataset), generator=torch.Generator().manual_seed(SEED + epoch)).tolist()
+        order = torch.randperm(len(dataset), generator=torch.Generator().manual_seed(args.seed + epoch)).tolist()
         batches = [order[i : i + args.batch_size] for i in range(0, n_batches * args.batch_size, args.batch_size)]
         first = state["step"] if epoch == state["epoch"] else 0
         loader = DataLoader(dataset, batch_sampler=batches[first:], collate_fn=partial(collate, pad_id=pad_id), num_workers=2)
@@ -214,16 +223,20 @@ def main():
         model.half().save_pretrained(ARTIFACTS / f"{args.prefix}_model")
         tokenizer.save_pretrained(ARTIFACTS / f"{args.prefix}_model")
         model.float()
-    val_ids = encode(tokenizer, val.text.tolist(), body, args.mode)
+    val_ids = encode(tokenizer, val.text.tolist(), body, args.mode, args.head_tokens)
     windows = args.eval_windows if args.mode == "chunks" else 1
     val_logits = predict(model, eval_windows(val_ids, body, windows), len(val_ids), cls_id, sep_id, pad_id, args.eval_batch_size, device)
     pred = np.array(LABELS)[val_logits.argmax(axis=1)]
     metrics = {
         "model": args.model,
         "mode": args.mode,
-        "seed": SEED,
+        "seed": args.seed,
         "train_size": len(train),
         "max_length": args.max_length,
+        "split_col": args.split_col,
+        "train_domain": args.train_domain,
+        "init_model": bool(args.init_model),
+        "head_tokens": args.head_tokens,
         "epochs": args.epochs,
         "lr": args.lr,
         "eval_windows": windows,
@@ -237,7 +250,7 @@ def main():
     np.save(ARTIFACTS / f"{args.prefix}_val.npy", val_logits)
     (RESULTS / f"{args.prefix}.json").write_text(json.dumps(metrics, indent=2))
     test = load_test()
-    test_ids = encode(tokenizer, test.text.tolist(), body, args.mode)
+    test_ids = encode(tokenizer, test.text.tolist(), body, args.mode, args.head_tokens)
     test_logits = predict(model, eval_windows(test_ids, body, windows), len(test_ids), cls_id, sep_id, pad_id, args.eval_batch_size, device)
     np.save(ARTIFACTS / f"{args.prefix}_test.npy", test_logits)
     print("done", time.time() - started, flush=True)

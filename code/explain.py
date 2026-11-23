@@ -10,6 +10,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 
 from common import ARTIFACTS, IMAGES, LABELS, LABEL2ID, RESULTS, SEED, split_frames
+from windows import head_tail
+
+HEAD_TOKENS = 128
 
 TOP = 25
 
@@ -53,31 +56,37 @@ def transformer_attributions(model_dir, per_class=8):
     import torch
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-    _, val = split_frames()
+    _, val = split_frames("part2")
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     model = AutoModelForSequenceClassification.from_pretrained(model_dir, dtype=torch.float32).eval()
     sample = val[val.lang == "en-EN"].groupby("label", group_keys=False).sample(n=per_class, random_state=SEED)
     rows = []
     for _, row in sample.iterrows():
-        enc = tokenizer(row.text, truncation=True, max_length=512, return_tensors="pt")
+        tokens = tokenizer(row.text, add_special_tokens=False)["input_ids"]
+        window = [tokenizer.cls_token_id] + head_tail(tokens, 510, HEAD_TOKENS) + [tokenizer.sep_token_id]
+        input_ids = torch.tensor([window])
+        mask = torch.ones_like(input_ids)
         with torch.no_grad():
-            predicted = int(model(**enc).logits.argmax())
-        attr = integrated_gradients(model, enc["input_ids"], enc["attention_mask"], predicted)
-        tokens = tokenizer.convert_ids_to_tokens(enc["input_ids"][0])
-        for position, (token, value) in enumerate(zip(tokens, attr)):
+            predicted = int(model(input_ids=input_ids, attention_mask=mask).logits.argmax())
+        attr = integrated_gradients(model, input_ids, mask, predicted)
+        pieces = tokenizer.convert_ids_to_tokens(window)
+        for position, (token, value) in enumerate(zip(pieces, attr)):
             rows.append(
                 {
                     "id": row.id,
                     "label": row.label,
                     "predicted": LABELS[predicted],
                     "position": position,
+                    "part": "head" if position <= HEAD_TOKENS else "tail",
                     "token": token,
                     "attribution": float(value),
+                    "n_tokens": len(tokens),
                 }
             )
     frame = pd.DataFrame(rows)
     frame.to_csv(RESULTS / "explain_transformer_attributions.csv", index=False)
-    clean = frame[~frame.token.isin(["[CLS]", "[SEP]"])]
+    special = [tokenizer.cls_token, tokenizer.sep_token]
+    clean = frame[~frame.token.isin(special)]
     fig, axes = plt.subplots(1, 3, figsize=(16, 6))
     for k, label in enumerate(LABELS):
         part = clean[clean.predicted == label]
@@ -88,9 +97,15 @@ def transformer_attributions(model_dir, per_class=8):
     fig.tight_layout()
     fig.savefig(IMAGES / "xai_transformer_tokens.png", dpi=130)
     plt.close(fig)
-    position_share = clean.assign(bucket=pd.cut(clean.position, [0, 64, 128, 256, 384, 512], include_lowest=True))
-    position_share = position_share.groupby(["predicted", "bucket"], observed=True).attribution.apply(lambda s: s.abs().mean()).unstack(0)
-    position_share.to_csv(RESULTS / "explain_position_profile.csv")
+    profile = clean.groupby(["predicted", "part"]).attribution.apply(lambda v: v.abs().mean()).unstack(1)
+    profile.to_csv(RESULTS / "explain_position_profile.csv")
+    share = clean.groupby(["label", "part"]).attribution.apply(lambda v: v.abs().sum()).unstack(1)
+    share = share.div(share.sum(axis=1), axis=0)
+    share.to_csv(RESULTS / "explain_tail_share.csv")
+    lines = ["# Explainability summary", "", "Linear model: top tokens per class in `explain_linear_top_tokens.csv` and `images/xai_linear_top_tokens.png`.", ""]
+    lines += ["Transformer: integrated gradients on head+tail windows of English validation texts, 8 per true class.", "", "Mean absolute attribution per token, by predicted class and window part:", ""]
+    lines += ["```", profile.round(5).to_string(), "```", "", "Share of total absolute attribution by true class and window part:", "", "```", share.round(3).to_string(), "```", ""]
+    (RESULTS / "explain_summary.md").write_text("\n".join(lines))
 
 
 def main():

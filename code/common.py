@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 
@@ -30,12 +31,24 @@ def load_split():
     return pd.read_csv(ARTIFACTS / "split.csv")
 
 
-def split_frames():
+def doc_keys(texts):
+    normalized = texts.str[:200].str.lower().str.replace(r"\s+", " ", regex=True)
+    return normalized.map(lambda s: hashlib.md5(s.encode()).hexdigest()[:12])
+
+
+def split_frames(train_col="part"):
     train = load_train().merge(load_split(), on="id", validate="one_to_one")
     return (
-        train[train.part == "train"].reset_index(drop=True),
+        train[train[train_col] == "train"].reset_index(drop=True),
         train[train.part == "val"].reset_index(drop=True),
     )
+
+
+def domain_frames(domain):
+    full = load_train().merge(load_split(), on="id", validate="one_to_one")
+    val = full[full.part == "val"].reset_index(drop=True)
+    train = full[(full.domain == domain) & ~full.key.isin(set(val.key))].reset_index(drop=True)
+    return train, val
 
 
 def macro_f1(y_true, y_pred, weights=None):

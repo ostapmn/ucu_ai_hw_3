@@ -1,0 +1,8 @@
+{
+  "model_dir": "/kaggle/input/datasets/ostapmn/hw3-model-a",
+  "body": 510,
+  "stride": 255,
+  "max_windows": 8,
+  "seconds": 4180.352001667023,
+  "mean_windows_val": 2.9088194370269775
+}
